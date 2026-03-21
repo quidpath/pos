@@ -1,0 +1,56 @@
+services:
+  db:
+    image: postgres:15
+    container_name: postgres_pos_dev
+    restart: unless-stopped
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_pos_dev_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: devdb
+      POSTGRES_USER: devuser
+      POSTGRES_PASSWORD: devpass
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devuser -d devdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - pos_dev_network
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pos-backend-dev
+    restart: unless-stopped
+    ports:
+      - "8003:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DJANGO_SETTINGS_MODULE: pos_service.settings.dev
+      DJANGO_ENV: dev
+      DEBUG: "true"
+      ALLOWED_HOSTS: "localhost,127.0.0.1,0.0.0.0,*"
+      DATABASE_URL: "postgresql://devuser:devpass@db:5432/devdb"
+      SECRET_KEY: "local-dev-secret-key"
+      JWT_SECRET_KEY: "local-jwt-secret"
+      SERVICE_SECRET: "local-service-secret"
+    volumes:
+      - .:/app
+      - media_dev:/app/media
+      - staticfiles_dev:/app/staticfiles
+    networks:
+      - pos_dev_network
+
+networks:
+  pos_dev_network:
+    driver: bridge
+
+volumes:
+  postgres_pos_dev_data:
+  media_dev:
+  staticfiles_dev:

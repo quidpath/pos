@@ -1,0 +1,60 @@
+name: pos-stage
+
+services:
+  db:
+    image: postgres:15
+    container_name: postgres_pos_stage
+    restart: unless-stopped
+    volumes:
+      - /mnt/quidpath-pos-db-stage/postgres:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - pos_network
+      - quidpath_network
+
+  backend:
+    image: ${IMAGE_TAG}
+    container_name: pos-backend-stage
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8019:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      SECRET_KEY: ${SECRET_KEY}
+      POS_SERVICE_SECRET: ${POS_SERVICE_SECRET}
+      INVENTORY_SERVICE_SECRET: ${INVENTORY_SERVICE_SECRET}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS}
+      ERP_BACKEND_URL: ${ERP_BACKEND_URL}
+      INVENTORY_SERVICE_URL: ${INVENTORY_SERVICE_URL}
+      REDIS_URL: ${REDIS_URL}
+      DJANGO_SETTINGS_MODULE: pos_service.settings.stage
+      DJANGO_ENV: stage
+    volumes:
+      - /mnt/quidpath-pos-stage-data/media:/app/media
+      - /mnt/quidpath-pos-stage-data/staticfiles:/app/staticfiles
+    networks:
+      - pos_network
+      - quidpath_network
+
+networks:
+  pos_network:
+    name: pos_stage_network
+    driver: bridge
+  quidpath_network:
+    external: true
+    name: stage_quidpath_network

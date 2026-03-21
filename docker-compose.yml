@@ -1,0 +1,81 @@
+name: pos-prod
+
+services:
+  db:
+    image: postgres:15
+    container_name: postgres_pos_prod
+    restart: unless-stopped
+    volumes:
+      - /mnt/ebs/pos/postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - pos_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: pos_redis
+    restart: unless-stopped
+    networks:
+      - pos_network
+
+  backend:
+    image: ${IMAGE_TAG}
+    container_name: pos-backend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8018:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      SECRET_KEY: ${SECRET_KEY}
+      POS_SERVICE_SECRET: ${POS_SERVICE_SECRET}
+      INVENTORY_SERVICE_SECRET: ${INVENTORY_SERVICE_SECRET}
+      REDIS_URL: redis://redis:6379/0
+      DJANGO_SETTINGS_MODULE: pos_service.settings.prod
+      DJANGO_ENV: prod
+    volumes:
+      - /mnt/ebs/pos/media:/app/media
+      - /mnt/ebs/pos/staticfiles:/app/staticfiles
+    networks:
+      - pos_network
+      - quidpath_network
+
+  celery:
+    image: ${IMAGE_TAG}
+    container_name: pos-celery
+    restart: unless-stopped
+    command: celery -A pos_service worker -l info
+    depends_on:
+      - redis
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: redis://redis:6379/0
+      DJANGO_SETTINGS_MODULE: pos_service.settings.prod
+    networks:
+      - pos_network
+      - quidpath_network
+
+networks:
+  pos_network:
+    name: pos_prod_network
+    driver: bridge
+  quidpath_network:
+    external: true
+    name: tmp_quidpath_network
