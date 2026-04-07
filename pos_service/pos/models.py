@@ -126,7 +126,7 @@ class POSOrder(BaseModel):
     customer_id = models.UUIDField(null=True, blank=True)
     customer_name = models.CharField(max_length=200, blank=True)
     loyalty_card = models.ForeignKey(LoyaltyCard, on_delete=models.SET_NULL, null=True, blank=True)
-    state = models.CharField(max_length=20, choices=STATES, default="draft")
+    state = models.CharField(max_length=20, choices=STATES, default="draft", db_index=True)
     subtotal = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
     discount_amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
     tax_amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
@@ -138,6 +138,9 @@ class POSOrder(BaseModel):
     notes = models.TextField(blank=True)
     cashier_id = models.UUIDField(null=True, blank=True)
     paid_at = models.DateTimeField(null=True, blank=True)
+    drafted_at = models.DateTimeField(null=True, blank=True)
+    posted_at = models.DateTimeField(null=True, blank=True)
+    posted_by = models.UUIDField(null=True, blank=True, help_text='User ID who posted the order')
 
     class Meta:
         ordering = ["-created_at"]
