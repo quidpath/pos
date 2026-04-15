@@ -10,8 +10,8 @@ from pos_service.services.user_cache_service import UserCacheService
 logger = logging.getLogger(__name__)
 
 SERVICE_TO_SERVICE_PATHS = [
-    "/api/pos/orders/",
-    "/api/purchases/orders/",
+    "/api/pos/",
+    "/api/purchases/",
 ]
 
 
