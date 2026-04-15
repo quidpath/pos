@@ -8,7 +8,7 @@ from django.utils import timezone
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from pos_service.pos.models import Order, Session
+from pos_service.pos.models import POSOrder, POSSession
 
 
 @api_view(["GET"])
@@ -42,22 +42,22 @@ def pos_summary(request):
         return "neutral"
     
     # Today's Sales
-    todays_orders = Order.objects.filter(
+    todays_orders = POSOrder.objects.filter(
         corporate_id=cid,
         created_at__gte=today_start,
         created_at__lte=today_end,
-        status__in=['completed', 'paid']
+        state__in=['paid', 'invoiced']
     )
     todays_sales = todays_orders.aggregate(
         total=Sum('total_amount')
     )['total'] or Decimal('0')
     
     # Yesterday's Sales
-    yesterday_orders = Order.objects.filter(
+    yesterday_orders = POSOrder.objects.filter(
         corporate_id=cid,
         created_at__gte=yesterday_start,
         created_at__lte=yesterday_end,
-        status__in=['completed', 'paid']
+        state__in=['paid', 'invoiced']
     )
     yesterday_sales = yesterday_orders.aggregate(
         total=Sum('total_amount')
@@ -76,38 +76,38 @@ def pos_summary(request):
     )['avg'] or Decimal('0')
     
     # Refunds Today
-    refunds_today = Order.objects.filter(
+    refunds_today = POSOrder.objects.filter(
         corporate_id=cid,
         created_at__gte=today_start,
-        status='refunded'
+        state='returned'
     ).count()
     
-    refunds_yesterday = Order.objects.filter(
+    refunds_yesterday = POSOrder.objects.filter(
         corporate_id=cid,
         created_at__gte=yesterday_start,
         created_at__lte=yesterday_end,
-        status='refunded'
+        state='returned'
     ).count()
     
     refunds_change = calc_change(refunds_today, refunds_yesterday)
     
     # Active Sessions
-    active_sessions = Session.objects.filter(
-        corporate_id=cid,
-        status='open'
+    active_sessions = POSSession.objects.filter(
+        terminal__store__corporate_id=cid,
+        state='open'
     ).count()
     
     # Top Selling Items Today (optional)
     from django.db.models import F
-    top_items = Order.objects.filter(
+    top_items = POSOrder.objects.filter(
         corporate_id=cid,
         created_at__gte=today_start,
-        status__in=['completed', 'paid']
+        state__in=['paid', 'invoiced']
     ).values(
-        'items__product_name'
+        'lines__product_name'
     ).annotate(
-        quantity_sold=Sum('items__quantity'),
-        revenue=Sum(F('items__quantity') * F('items__unit_price'))
+        quantity_sold=Sum('lines__quantity'),
+        revenue=Sum(F('lines__quantity') * F('lines__unit_price'))
     ).order_by('-quantity_sold')[:5]
     
     return Response({
