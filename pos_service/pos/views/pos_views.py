@@ -2,6 +2,7 @@ import logging
 import uuid
 from decimal import Decimal
 
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view
@@ -18,6 +19,7 @@ from pos_service.pos.serializers import (
     PromotionSerializer, ReturnOrderSerializer, StoreSerializer,
 )
 from pos_service.services.inventory_client import InventoryClient
+from pos_service.core.utils.pagination import paginate_qs
 
 logger = logging.getLogger(__name__)
 inventory_client = InventoryClient()
@@ -111,7 +113,12 @@ def order_list_create(request):
         session_id = request.GET.get("session")
         if session_id:
             qs = qs.filter(session_id=session_id)
-        return Response(POSOrderSerializer(qs[:100], many=True).data)
+        search = request.GET.get("search", "").strip()
+        if search:
+            qs = qs.filter(Q(order_number__icontains=search) | Q(customer_name__icontains=search))
+        qs = qs.order_by("-created_at")
+        page_qs, meta = paginate_qs(qs, request)
+        return Response({"results": POSOrderSerializer(page_qs, many=True).data, **meta})
 
     session_id = request.data.get("session")
     try:

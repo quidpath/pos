@@ -123,13 +123,13 @@ class POSOrder(BaseModel):
     corporate_id = models.UUIDField(db_index=True)
     session = models.ForeignKey(POSSession, on_delete=models.PROTECT, related_name="orders")
     order_number = models.CharField(max_length=50, unique=True, db_index=True)
-    customer_id = models.UUIDField(null=True, blank=True)
+    customer_id = models.UUIDField(null=True, blank=True, db_index=True, help_text="CRM Contact ID")
     customer_name = models.CharField(max_length=200, blank=True)
     loyalty_card = models.ForeignKey(LoyaltyCard, on_delete=models.SET_NULL, null=True, blank=True)
     state = models.CharField(max_length=20, choices=STATES, default="draft", db_index=True)
     subtotal = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
     discount_amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
-    tax_amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
+    tax_amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"), help_text="Tax applied only when converted to invoice")
     total_amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
     amount_paid = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
     change_amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
@@ -141,21 +141,30 @@ class POSOrder(BaseModel):
     drafted_at = models.DateTimeField(null=True, blank=True)
     posted_at = models.DateTimeField(null=True, blank=True)
     posted_by = models.UUIDField(null=True, blank=True, help_text='User ID who posted the order')
+    
+    # Invoice integration fields
+    invoice_id = models.UUIDField(null=True, blank=True, db_index=True, help_text="Accounting Invoice ID")
+    is_invoiced = models.BooleanField(default=False, db_index=True)
+    invoiced_at = models.DateTimeField(null=True, blank=True)
+    invoiced_by = models.UUIDField(null=True, blank=True, help_text='User ID who converted to invoice')
 
     class Meta:
         ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["customer_id", "created_at"]),
+            models.Index(fields=["is_invoiced", "state"]),
+        ]
 
     def __str__(self):
         return f"Order {self.order_number}"
 
     def calculate_totals(self):
+        """Calculate order totals WITHOUT tax (tax applied only when converting to invoice)"""
         lines = self.lines.all()
         self.subtotal = sum(l.subtotal for l in lines)
         self.discount_amount = sum(l.discount_amount for l in lines)
-        taxable = self.subtotal - self.discount_amount
-        store = self.session.terminal.store
-        self.tax_amount = taxable * store.tax_rate / Decimal("100")
-        self.total_amount = taxable + self.tax_amount
+        # Total = Subtotal - Discounts (NO TAX)
+        self.total_amount = self.subtotal - self.discount_amount
         self.save()
 
 

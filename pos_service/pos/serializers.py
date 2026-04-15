@@ -102,8 +102,14 @@ class POSOrderSerializer(serializers.ModelSerializer):
             "discount_amount", "tax_amount", "total_amount", "amount_paid",
             "change_amount", "points_earned", "points_redeemed", "notes",
             "cashier_id", "created_at", "paid_at", "lines", "payments",
+            # Invoice integration fields
+            "invoice_id", "is_invoiced", "invoiced_at", "invoiced_by",
         ]
-        read_only_fields = ["id", "order_number", "subtotal", "discount_amount", "tax_amount", "total_amount", "created_at", "paid_at"]
+        read_only_fields = [
+            "id", "order_number", "subtotal", "discount_amount", "tax_amount", 
+            "total_amount", "created_at", "paid_at", "invoice_id", "is_invoiced", 
+            "invoiced_at", "invoiced_by"
+        ]
 
 
 class ReturnOrderLineSerializer(serializers.ModelSerializer):

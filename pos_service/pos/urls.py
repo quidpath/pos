@@ -16,8 +16,15 @@ from .views.pos_views import (
     store_detail,
     store_list_create,
 )
+from .views.summary import pos_summary
+from .views.invoice_conversion import (
+    convert_to_invoice,
+    get_invoice_status,
+    list_uninvoiced_orders,
+)
 
 urlpatterns = [
+    path("summary/", pos_summary, name="pos_summary"),
     path("stores/", store_list_create),
     path("stores/<uuid:pk>/", store_detail),
     path("terminals/<uuid:terminal_pk>/sessions/open/", open_session),
@@ -29,6 +36,11 @@ urlpatterns = [
     path("orders/<uuid:order_pk>/lines/<uuid:line_pk>/", remove_order_line),
     path("orders/<uuid:order_pk>/pay/", process_payment),
     path("orders/<uuid:order_pk>/return/", process_return),
+    # Invoice conversion endpoints
+    path("orders/<uuid:order_pk>/convert-to-invoice/", convert_to_invoice, name="convert_to_invoice"),
+    path("orders/<uuid:order_pk>/invoice-status/", get_invoice_status, name="get_invoice_status"),
+    path("orders/uninvoiced/", list_uninvoiced_orders, name="list_uninvoiced_orders"),
+    # Promotions & Loyalty
     path("promotions/", promotion_list_create),
     path("loyalty/programs/", loyalty_program_list_create),
     path("loyalty/cards/lookup/", loyalty_card_lookup),
