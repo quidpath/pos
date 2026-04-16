@@ -10,42 +10,30 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AddField(
-            model_name='posorder',
-            name='invoice_id',
-            field=models.UUIDField(blank=True, db_index=True, help_text='Accounting Invoice ID', null=True),
+        migrations.RunSQL(
+            sql=[
+                "ALTER TABLE pos_posorder ADD COLUMN IF NOT EXISTS invoice_id UUID NULL;",
+                "ALTER TABLE pos_posorder ADD COLUMN IF NOT EXISTS is_invoiced BOOLEAN NOT NULL DEFAULT FALSE;",
+                "ALTER TABLE pos_posorder ADD COLUMN IF NOT EXISTS invoiced_at TIMESTAMP WITH TIME ZONE NULL;",
+                "ALTER TABLE pos_posorder ADD COLUMN IF NOT EXISTS invoiced_by UUID NULL;",
+            ],
+            reverse_sql=[
+                "ALTER TABLE pos_posorder DROP COLUMN IF EXISTS invoice_id;",
+                "ALTER TABLE pos_posorder DROP COLUMN IF EXISTS is_invoiced;",
+                "ALTER TABLE pos_posorder DROP COLUMN IF EXISTS invoiced_at;",
+                "ALTER TABLE pos_posorder DROP COLUMN IF EXISTS invoiced_by;",
+            ],
         ),
-        migrations.AddField(
-            model_name='posorder',
-            name='is_invoiced',
-            field=models.BooleanField(db_index=True, default=False),
-        ),
-        migrations.AddField(
-            model_name='posorder',
-            name='invoiced_at',
-            field=models.DateTimeField(blank=True, null=True),
-        ),
-        migrations.AddField(
-            model_name='posorder',
-            name='invoiced_by',
-            field=models.UUIDField(blank=True, help_text='User ID who converted to invoice', null=True),
-        ),
-        migrations.AlterField(
-            model_name='posorder',
-            name='customer_id',
-            field=models.UUIDField(blank=True, db_index=True, help_text='CRM Contact ID', null=True),
-        ),
-        migrations.AlterField(
-            model_name='posorder',
-            name='tax_amount',
-            field=models.DecimalField(decimal_places=2, default=0, help_text='Tax applied only when converted to invoice', max_digits=14),
-        ),
-        migrations.AddIndex(
-            model_name='posorder',
-            index=models.Index(fields=['customer_id', 'created_at'], name='pos_posorde_custome_idx'),
-        ),
-        migrations.AddIndex(
-            model_name='posorder',
-            index=models.Index(fields=['is_invoiced', 'state'], name='pos_posorde_is_invo_idx'),
+        migrations.RunSQL(
+            sql=[
+                "CREATE INDEX IF NOT EXISTS pos_posorde_custome_idx ON pos_posorder (customer_id, created_at);",
+                "CREATE INDEX IF NOT EXISTS pos_posorde_is_invo_idx ON pos_posorder (is_invoiced, state);",
+                "CREATE INDEX IF NOT EXISTS pos_posorder_invoice_id_idx ON pos_posorder (invoice_id);",
+            ],
+            reverse_sql=[
+                "DROP INDEX IF EXISTS pos_posorde_custome_idx;",
+                "DROP INDEX IF EXISTS pos_posorde_is_invo_idx;",
+                "DROP INDEX IF EXISTS pos_posorder_invoice_id_idx;",
+            ],
         ),
     ]

@@ -10,23 +10,20 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AddField(
-            model_name='posorder',
-            name='drafted_at',
-            field=models.DateTimeField(blank=True, null=True),
+        migrations.RunSQL(
+            sql=[
+                "ALTER TABLE pos_posorder ADD COLUMN IF NOT EXISTS drafted_at TIMESTAMP WITH TIME ZONE NULL;",
+                "ALTER TABLE pos_posorder ADD COLUMN IF NOT EXISTS posted_at TIMESTAMP WITH TIME ZONE NULL;",
+                "ALTER TABLE pos_posorder ADD COLUMN IF NOT EXISTS posted_by UUID NULL;",
+            ],
+            reverse_sql=[
+                "ALTER TABLE pos_posorder DROP COLUMN IF EXISTS drafted_at;",
+                "ALTER TABLE pos_posorder DROP COLUMN IF EXISTS posted_at;",
+                "ALTER TABLE pos_posorder DROP COLUMN IF EXISTS posted_by;",
+            ],
         ),
-        migrations.AddField(
-            model_name='posorder',
-            name='posted_at',
-            field=models.DateTimeField(blank=True, null=True),
-        ),
-        migrations.AddField(
-            model_name='posorder',
-            name='posted_by',
-            field=models.UUIDField(blank=True, null=True, help_text='User ID who posted the order'),
-        ),
-        migrations.AddIndex(
-            model_name='posorder',
-            index=models.Index(fields=['state'], name='posorder_state_idx'),
+        migrations.RunSQL(
+            sql="CREATE INDEX IF NOT EXISTS posorder_state_idx ON pos_posorder (state);",
+            reverse_sql="DROP INDEX IF EXISTS posorder_state_idx;",
         ),
     ]
