@@ -1,6 +1,6 @@
 #!/bin/bash
 set -euo pipefail
-echo "Starting POS & Purchases Service"
+echo "Starting POS & Purchases Service (Safe Mode)"
 APP_DIR="/app"
 cd "$APP_DIR"
 
@@ -17,7 +17,20 @@ if [ -f .env ]; then
 fi
 
 PYTHON=$(command -v python3 || command -v python)
-$PYTHON manage.py migrate --noinput
+
+# Fix migration state if needed
+echo "Checking migration state..."
+$PYTHON manage.py fix_migration_state --dry-run
+
+# Try to migrate, but handle conflicts gracefully
+echo "Running migrations..."
+if ! $PYTHON manage.py migrate --noinput; then
+    echo "Migration failed, attempting to fix migration state..."
+    $PYTHON manage.py fix_migration_state
+    echo "Retrying migrations..."
+    $PYTHON manage.py migrate --noinput
+fi
+
 $PYTHON manage.py collectstatic --noinput
 $PYTHON manage.py createsuperuser --noinput || true
 

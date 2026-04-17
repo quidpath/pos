@@ -11,7 +11,8 @@ RUN pip install --no-cache-dir -r requirements/prod.txt
 
 COPY . /app
 COPY start.sh /start.sh
-RUN chmod +x /start.sh
+COPY start_safe.sh /start_safe.sh
+RUN chmod +x /start.sh /start_safe.sh
 
 ENV DJANGO_SETTINGS_MODULE=pos_service.settings.prod
 EXPOSE 8000
