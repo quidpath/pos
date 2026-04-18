@@ -62,10 +62,10 @@ jobs:
           add DATABASE_URL "${{ secrets.POS_DATABASE_URL }}"
           # Service URLs
           add ALLOWED_HOSTS "pos.quidpath.com,api.quidpath.com,localhost,127.0.0.1"
-          add ERP_BACKEND_URL "http://django-backend:8000"
-          add INVENTORY_SERVICE_URL "http://inventory-backend:8000"
-          add CRM_SERVICE_URL "http://crm-backend:8000"
-          add HRM_SERVICE_URL "http://hrm-backend:8000"
+          add ERP_BACKEND_URL "http://51.77.147.233:8004"
+          add INVENTORY_SERVICE_URL "http://51.77.147.233:8014"
+          add CRM_SERVICE_URL "http://51.77.147.233:8016"
+          add HRM_SERVICE_URL "http://51.77.147.233:8008"
           add REDIS_URL "redis://redis:6379/0"
           add DJANGO_SETTINGS_MODULE "pos_service.settings.prod"
 
