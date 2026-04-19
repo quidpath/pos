@@ -62,7 +62,7 @@ jobs:
           add DATABASE_URL "${{ secrets.POS_DATABASE_URL_STAGE }}"
           # Service URLs
           add ALLOWED_HOSTS "stage-pos.quidpath.com,stage-api.quidpath.com,localhost,127.0.0.1,0.0.0.0"
-          add ERP_BACKEND_URL "http://django-backend-stage:8000"
+          add ERP_BACKEND_URL "http://quidpath-backend-stage:8004"
           add INVENTORY_SERVICE_URL "http://inventory-backend-stage:8000"
           add CRM_SERVICE_URL "http://crm-backend-stage:8000"
           add HRM_SERVICE_URL "http://hrm-backend-stage:8000"
