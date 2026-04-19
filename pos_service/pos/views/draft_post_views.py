@@ -8,8 +8,7 @@ from django.utils import timezone
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import api_view
 
 from ..models import POSOrder, POSOrderLine, POSSession
 
@@ -35,7 +34,6 @@ def validate_pos_order_for_posting(order):
 
 @csrf_exempt
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
 def save_pos_order_draft(request):
     """
     Save a POS order as draft (held/parked order).
@@ -43,7 +41,7 @@ def save_pos_order_draft(request):
     """
     data = request.data
     order_id = data.get('id')
-    corporate_id = request.user.corporate_id
+    corporate_id = request.corporate_id
     
     try:
         with transaction.atomic():
@@ -116,7 +114,7 @@ def save_pos_order_draft(request):
                     customer_id=data.get('customer_id'),
                     customer_name=data.get('customer_name', ''),
                     state='draft',
-                    cashier_id=request.user.id,
+                    cashier_id=request.user_id,
                     drafted_at=timezone.now()
                 )
                 
@@ -163,13 +161,12 @@ def save_pos_order_draft(request):
 
 @csrf_exempt
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
 def post_pos_order(request, order_id):
     """
     Finalize a POS order (transition from draft to paid).
     Validates all required fields and payment.
     """
-    corporate_id = request.user.corporate_id
+    corporate_id = request.corporate_id
     data = request.data
     
     try:
@@ -214,7 +211,7 @@ def post_pos_order(request, order_id):
             order.change_amount = amount_paid - order.total_amount
             order.paid_at = timezone.now()
             order.posted_at = timezone.now()
-            order.posted_by = request.user.id
+            order.posted_by = request.user_id
             order.save()
             
             # Update loyalty points if applicable
@@ -251,13 +248,12 @@ def post_pos_order(request, order_id):
 
 @csrf_exempt
 @api_view(['PATCH'])
-@permission_classes([IsAuthenticated])
 def auto_save_pos_order(request, order_id):
     """
     Auto-save POS order with minimal validation.
     Used for periodic saves while building an order.
     """
-    corporate_id = request.user.corporate_id
+    corporate_id = request.corporate_id
     data = request.data
     
     try:
@@ -301,10 +297,9 @@ def auto_save_pos_order(request, order_id):
 
 @csrf_exempt
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
 def list_draft_pos_orders(request):
     """List all draft (held/parked) orders for the current corporate."""
-    corporate_id = request.user.corporate_id
+    corporate_id = request.corporate_id
     
     try:
         drafts = POSOrder.objects.filter(
