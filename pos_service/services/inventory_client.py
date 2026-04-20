@@ -1,56 +1,215 @@
-"""Client for calling the Inventory service from POS/Purchases."""
+"""
+Inventory Client for POS Service
+Queries inventory service for product information
+"""
 import logging
 import requests
+from typing import Dict, List, Optional
+from django.core.cache import cache
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
 
 class InventoryClient:
+    """
+    Client for querying the Inventory Service
+    Inventory is the single source of truth for products
+    """
+    
     def __init__(self):
-        self.base_url = settings.INVENTORY_SERVICE_URL
-        self.secret = settings.INVENTORY_SERVICE_SECRET
-
-    def _headers(self):
-        return {"X-Service-Key": self.secret, "Content-Type": "application/json"}
-
-    def create_stock_move(self, payload: dict) -> dict | None:
+        self.base_url = getattr(settings, 'INVENTORY_SERVICE_URL', 'http://inventory-backend:8000')
+        self.secret = getattr(settings, 'INVENTORY_SERVICE_SECRET', '')
+        self.cache_ttl = 300  # 5 minutes
+    
+    def _get_headers(self, corporate_id: str) -> Dict:
+        """Generate headers for service-to-service calls"""
+        return {
+            'X-Service-Key': self.secret,
+            'X-Corporate-ID': str(corporate_id),
+            'Content-Type': 'application/json',
+        }
+    
+    def _get_cache_key(self, key_type: str, identifier: str, corporate_id: str) -> str:
+        """Generate cache key"""
+        return f"inventory:{key_type}:{corporate_id}:{identifier}"
+    
+    def get_product(self, product_id: str, corporate_id: str, use_cache: bool = True) -> Optional[Dict]:
+        """
+        Get product details from inventory
+        
+        Args:
+            product_id: Product UUID
+            corporate_id: Corporate/tenant ID
+            use_cache: Whether to use cached data (default: True)
+            
+        Returns:
+            Product dict or None if not found
+        """
+        # Try cache first
+        if use_cache:
+            cache_key = self._get_cache_key('product', product_id, corporate_id)
+            cached = cache.get(cache_key)
+            if cached:
+                logger.debug(f"Cache hit for product {product_id}")
+                return cached
+        
+        # Fetch from inventory
         try:
-            resp = requests.post(
-                f"{self.base_url}/api/inventory/stock/moves/",
-                json=payload,
-                headers=self._headers(),
-                timeout=10,
+            response = requests.get(
+                f"{self.base_url}/api/inventory/products/{product_id}/",
+                headers=self._get_headers(corporate_id),
+                timeout=5
             )
-            resp.raise_for_status()
-            return resp.json()
-        except Exception as e:
-            logger.error("Inventory stock move failed: %s", e)
+            
+            if response.status_code == 404:
+                logger.warning(f"Product {product_id} not found in inventory")
+                return None
+            
+            response.raise_for_status()
+            product = response.json()
+            
+            # Cache it
+            if use_cache:
+                cache_key = self._get_cache_key('product', product_id, corporate_id)
+                cache.set(cache_key, product, self.cache_ttl)
+            
+            return product
+            
+        except requests.exceptions.Timeout:
+            logger.error(f"Timeout fetching product {product_id} from inventory")
             return None
-
-    def validate_stock_move(self, move_id: str) -> dict | None:
-        try:
-            resp = requests.post(
-                f"{self.base_url}/api/inventory/stock/moves/{move_id}/validate/",
-                headers=self._headers(),
-                timeout=10,
-            )
-            resp.raise_for_status()
-            return resp.json()
-        except Exception as e:
-            logger.error("Inventory validate move failed: %s", e)
+        except requests.exceptions.ConnectionError:
+            logger.error(f"Connection error fetching product {product_id} from inventory")
             return None
-
-    def get_stock_level(self, product_id: str, corporate_id: str) -> dict | None:
-        try:
-            resp = requests.get(
-                f"{self.base_url}/api/inventory/stock/summary/{product_id}/",
-                headers=self._headers(),
-                params={"corporate_id": corporate_id},
-                timeout=5,
-            )
-            if resp.status_code == 200:
-                return resp.json()
         except Exception as e:
-            logger.warning("Could not get stock level: %s", e)
-        return None
+            logger.error(f"Error fetching product {product_id}: {str(e)}")
+            return None
+    
+    def get_products_bulk(self, product_ids: List[str], corporate_id: str) -> List[Dict]:
+        """
+        Get multiple products at once
+        
+        Args:
+            product_ids: List of product UUIDs
+            corporate_id: Corporate/tenant ID
+            
+        Returns:
+            List of product dicts
+        """
+        if not product_ids:
+            return []
+        
+        try:
+            response = requests.post(
+                f"{self.base_url}/api/inventory/products/bulk/",
+                json={'product_ids': product_ids},
+                headers=self._get_headers(corporate_id),
+                timeout=10
+            )
+            
+            response.raise_for_status()
+            data = response.json()
+            
+            # Cache individual products
+            for product in data.get('products', []):
+                cache_key = self._get_cache_key('product', product['id'], corporate_id)
+                cache.set(cache_key, product, self.cache_ttl)
+            
+            return data.get('products', [])
+            
+        except Exception as e:
+            logger.error(f"Error fetching products bulk: {str(e)}")
+            return []
+    
+    def search_products(self, query: str, corporate_id: str) -> List[Dict]:
+        """
+        Search products by name, SKU, or barcode
+        
+        Args:
+            query: Search term
+            corporate_id: Corporate/tenant ID
+            
+        Returns:
+            List of matching products
+        """
+        if not query:
+            return []
+        
+        try:
+            response = requests.get(
+                f"{self.base_url}/api/inventory/products/search/",
+                params={'q': query},
+                headers=self._get_headers(corporate_id),
+                timeout=5
+            )
+            
+            response.raise_for_status()
+            data = response.json()
+            return data.get('products', [])
+            
+        except Exception as e:
+            logger.error(f"Error searching products: {str(e)}")
+            return []
+    
+    def get_stock_level(self, product_id: str, corporate_id: str) -> Optional[Dict]:
+        """
+        Get current stock level for a product
+        
+        Args:
+            product_id: Product UUID
+            corporate_id: Corporate/tenant ID
+            
+        Returns:
+            Stock info dict or None
+        """
+        try:
+            response = requests.get(
+                f"{self.base_url}/api/inventory/products/{product_id}/stock/",
+                headers=self._get_headers(corporate_id),
+                timeout=5
+            )
+            
+            if response.status_code == 404:
+                return None
+            
+            response.raise_for_status()
+            return response.json()
+            
+        except Exception as e:
+            logger.error(f"Error fetching stock level: {str(e)}")
+            return None
+    
+    def list_products_for_sale(self, corporate_id: str) -> List[Dict]:
+        """
+        List all products available for sale
+        
+        Args:
+            corporate_id: Corporate/tenant ID
+            
+        Returns:
+            List of products
+        """
+        try:
+            response = requests.get(
+                f"{self.base_url}/api/inventory/products/for-sale/",
+                headers=self._get_headers(corporate_id),
+                timeout=10
+            )
+            
+            response.raise_for_status()
+            data = response.json()
+            return data.get('products', [])
+            
+        except Exception as e:
+            logger.error(f"Error listing products for sale: {str(e)}")
+            return []
+    
+    def invalidate_cache(self, product_id: str, corporate_id: str):
+        """
+        Invalidate cached product data
+        Call this when you know a product has been updated
+        """
+        cache_key = self._get_cache_key('product', product_id, corporate_id)
+        cache.delete(cache_key)
+        logger.debug(f"Invalidated cache for product {product_id}")

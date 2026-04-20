@@ -22,6 +22,14 @@ from .views.invoice_conversion import (
     get_invoice_status,
     list_uninvoiced_orders,
 )
+from .views.product_views import (
+    search_products,
+    get_product,
+    list_products_for_sale,
+    get_products_bulk,
+    check_stock,
+)
+# Product sync removed - using inventory query API directly
 
 urlpatterns = [
     path("summary/", pos_summary, name="pos_summary"),
@@ -44,4 +52,10 @@ urlpatterns = [
     path("promotions/", promotion_list_create),
     path("loyalty/programs/", loyalty_program_list_create),
     path("loyalty/cards/lookup/", loyalty_card_lookup),
+    # Product query endpoints (from inventory service)
+    path("products/", list_products_for_sale, name="list_products_for_sale"),
+    path("products/search/", search_products, name="search_products"),
+    path("products/bulk/", get_products_bulk, name="get_products_bulk"),
+    path("products/<uuid:product_id>/", get_product, name="get_product"),
+    path("products/<uuid:product_id>/stock/", check_stock, name="check_stock"),
 ]

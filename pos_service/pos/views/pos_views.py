@@ -150,21 +150,44 @@ def order_detail(request, pk):
 
 @api_view(["POST"])
 def add_order_line(request, order_pk):
+    """Add product to order with inventory validation"""
     corporate_id = request.corporate_id
     try:
         order = POSOrder.objects.get(pk=order_pk, corporate_id=corporate_id, state="draft")
     except POSOrder.DoesNotExist:
         return Response({"error": "Draft order not found"}, status=404)
-    line = POSOrderLine(order=order, **{
-        "product_id": request.data["product_id"],
-        "variant_id": request.data.get("variant_id"),
-        "product_name": request.data["product_name"],
-        "sku": request.data.get("sku", ""),
-        "quantity": Decimal(str(request.data["quantity"])),
-        "unit_price": Decimal(str(request.data["unit_price"])),
-        "discount_percent": Decimal(str(request.data.get("discount_percent", "0"))),
-        "notes": request.data.get("notes", ""),
-    })
+    
+    product_id = request.data.get("product_id")
+    quantity = Decimal(str(request.data.get("quantity", "1")))
+    
+    # Get product from inventory
+    product = inventory_client.get_product(product_id, corporate_id)
+    if not product:
+        return Response({"error": "Product not found in inventory"}, status=404)
+    
+    # Check stock availability
+    stock = inventory_client.get_stock_level(product_id, corporate_id)
+    if stock:
+        available = Decimal(stock.get('total_available', '0'))
+        if available < quantity:
+            return Response({
+                "error": "Insufficient stock",
+                "available": str(available),
+                "requested": str(quantity)
+            }, status=400)
+    
+    # Create order line with captured data from inventory
+    line = POSOrderLine(
+        order=order,
+        product_id=product_id,
+        variant_id=request.data.get("variant_id"),
+        product_name=product['name'],  # Captured from inventory
+        sku=product.get('internal_reference', ''),  # Captured from inventory
+        quantity=quantity,
+        unit_price=Decimal(product.get('list_price', request.data.get('unit_price', '0'))),  # Use inventory price
+        discount_percent=Decimal(str(request.data.get("discount_percent", "0"))),
+        notes=request.data.get("notes", ""),
+    )
     line.save()
     order.calculate_totals()
     return Response(POSOrderSerializer(order).data, status=201)
