@@ -23,7 +23,15 @@ else:
     }
 
 DEBUG = False
-_default_hosts = "pos.quidpath.com,api.quidpath.com,quidpath.com,localhost,127.0.0.1,0.0.0.0"
+
+# Service URLs for production environment
+ERP_BACKEND_URL = os.environ.get("ERP_BACKEND_URL", "http://quidpath-backend-prod:8004")
+INVENTORY_SERVICE_URL = os.environ.get("INVENTORY_SERVICE_URL", "http://inventory-backend:8000")
+CRM_SERVICE_URL = os.environ.get("CRM_SERVICE_URL", "http://crm-backend:8000")
+HRM_SERVICE_URL = os.environ.get("HRM_SERVICE_URL", "http://hrm-backend:8000")
+PROJECTS_SERVICE_URL = os.environ.get("PROJECTS_SERVICE_URL", "http://projects-backend:8007")
+
+_default_hosts = "pos.quidpath.com,api.quidpath.com,quidpath.com,www.quidpath.com,localhost,127.0.0.1,0.0.0.0"
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get("ALLOWED_HOSTS", _default_hosts).split(",") if h.strip()]
 if "pos-backend" not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append("pos-backend")

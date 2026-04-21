@@ -14,7 +14,14 @@ DATABASES["default"]["OPTIONS"] = {"sslmode": "disable"}
 
 DEBUG = False
 
-_default_hosts = "stage.quidpath.com,www.stage.quidpath.com,localhost,127.0.0.1,0.0.0.0"
+# Service URLs for stage environment
+ERP_BACKEND_URL = os.environ.get("ERP_BACKEND_URL", "http://quidpath-backend-stage:8004")
+INVENTORY_SERVICE_URL = os.environ.get("INVENTORY_SERVICE_URL", "http://inventory-backend-stage:8000")
+CRM_SERVICE_URL = os.environ.get("CRM_SERVICE_URL", "http://crm-backend-stage:8000")
+HRM_SERVICE_URL = os.environ.get("HRM_SERVICE_URL", "http://hrm-backend-stage:8000")
+PROJECTS_SERVICE_URL = os.environ.get("PROJECTS_SERVICE_URL", "http://projects-backend-stage:8007")
+
+_default_hosts = "stage.quidpath.com,www.stage.quidpath.com,stage-pos.quidpath.com,stage-api.quidpath.com,localhost,127.0.0.1,0.0.0.0"
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get("ALLOWED_HOSTS", _default_hosts).split(",") if h.strip()]
 if "pos-backend-stage" not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append("pos-backend-stage")

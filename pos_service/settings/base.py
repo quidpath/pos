@@ -72,10 +72,14 @@ DATABASES = {
 }
 
 JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", SECRET_KEY)
-ERP_BACKEND_URL = os.environ.get("ERP_BACKEND_URL", "http://django-backend:8000")
-INVENTORY_SERVICE_URL = os.environ.get("INVENTORY_SERVICE_URL", "http://inventory-backend:8000")
-CRM_SERVICE_URL = os.environ.get("CRM_SERVICE_URL", "http://crm-backend:8000")
-HRM_SERVICE_URL = os.environ.get("HRM_SERVICE_URL", "http://hrm-backend:8000")
+
+# Service URLs for integration - set in environment-specific settings
+ERP_BACKEND_URL = os.environ.get("ERP_BACKEND_URL")
+INVENTORY_SERVICE_URL = os.environ.get("INVENTORY_SERVICE_URL")
+CRM_SERVICE_URL = os.environ.get("CRM_SERVICE_URL")
+HRM_SERVICE_URL = os.environ.get("HRM_SERVICE_URL")
+PROJECTS_SERVICE_URL = os.environ.get("PROJECTS_SERVICE_URL")
+
 # Service authentication - own secret
 POS_SERVICE_SECRET = os.environ.get("POS_SERVICE_SECRET", "")
 # Cross-service secrets (used when calling other services)
@@ -83,6 +87,8 @@ ERP_SERVICE_SECRET = os.environ.get("ERP_SERVICE_SECRET", "")
 INVENTORY_SERVICE_SECRET = os.environ.get("INVENTORY_SERVICE_SECRET", "")
 CRM_SERVICE_SECRET = os.environ.get("CRM_SERVICE_SECRET", "")
 HRM_SERVICE_SECRET = os.environ.get("HRM_SERVICE_SECRET", "")
+PROJECTS_SERVICE_SECRET = os.environ.get("PROJECTS_SERVICE_SECRET", "")
+BILLING_SERVICE_SECRET = os.environ.get("BILLING_SERVICE_SECRET", "")
 PROJECTS_SERVICE_SECRET = os.environ.get("PROJECTS_SERVICE_SECRET", "")
 BILLING_SERVICE_SECRET = os.environ.get("BILLING_SERVICE_SECRET", "")
 # Legacy alias
