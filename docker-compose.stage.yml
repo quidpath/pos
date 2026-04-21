@@ -6,7 +6,7 @@ services:
     container_name: postgres_pos_stage
     restart: unless-stopped
     volumes:
-      - /mnt/quidpath-pos-db-stage/postgres:/var/lib/postgresql/data
+      - /mnt/ebs/pos/postgres_data_stage:/var/lib/postgresql/data
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -18,7 +18,13 @@ services:
       retries: 5
     networks:
       - pos_network
-      - quidpath_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: pos_redis_stage
+    restart: unless-stopped
+    networks:
+      - pos_network
 
   backend:
     image: ${IMAGE_TAG}
@@ -29,24 +35,40 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_started
+    env_file:
+      - .env
     environment:
       DATABASE_URL: ${DATABASE_URL}
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       SECRET_KEY: ${SECRET_KEY}
       POS_SERVICE_SECRET: ${POS_SERVICE_SECRET}
-      INVENTORY_SERVICE_SECRET: ${INVENTORY_SERVICE_SECRET}
-      ALLOWED_HOSTS: ${ALLOWED_HOSTS}
-      ERP_BACKEND_URL: ${ERP_BACKEND_URL}
       INVENTORY_SERVICE_URL: http://inventory-backend-stage:8000
-      REDIS_URL: ${REDIS_URL}
+      INVENTORY_SERVICE_SECRET: ${INVENTORY_SERVICE_SECRET}
+      REDIS_URL: redis://redis:6379/0
       DJANGO_SETTINGS_MODULE: pos_service.settings.stage
       DJANGO_ENV: stage
     volumes:
-      - /mnt/quidpath-pos-stage-data/media:/app/media
-      - /mnt/quidpath-pos-stage-data/staticfiles:/app/staticfiles
+      - /mnt/ebs/pos/media_stage:/app/media
+      - /mnt/ebs/pos/staticfiles_stage:/app/staticfiles
+    networks:
+      - pos_network
+      - quidpath_network
+
+  celery:
+    image: ${IMAGE_TAG}
+    container_name: pos-celery-stage
+    restart: unless-stopped
+    command: celery -A pos_service worker -l info
+    depends_on:
+      - redis
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: redis://redis:6379/0
+      DJANGO_SETTINGS_MODULE: pos_service.settings.stage
     networks:
       - pos_network
       - quidpath_network
