@@ -30,7 +30,8 @@ class JWTAuthenticationMiddleware:
             if key and key == service_secret:
                 request.service_call = True
                 request.user_id = None
-                request.corporate_id = None
+                # Get corporate_id from X-Corporate-ID header for service-to-service calls
+                request.corporate_id = request.META.get("HTTP_X_CORPORATE_ID", "").strip() or None
                 request.user_data = {}
                 request.corporate_data = None
                 return self.get_response(request)
