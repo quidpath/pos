@@ -17,7 +17,15 @@ if [ -f .env ]; then
 fi
 
 PYTHON=$(command -v python3 || command -v python)
-$PYTHON manage.py migrate --noinput
+
+echo "Running migrations..."
+if ! $PYTHON manage.py migrate --noinput; then
+  echo "ERROR: Migration failed! Check logs above for details."
+  echo "Container will exit to prevent restart loop."
+  echo "Fix the migration issues in the code and redeploy."
+  exit 1
+fi
+
 $PYTHON manage.py collectstatic --noinput
 
 echo "Creating superuser..."
