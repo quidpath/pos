@@ -310,3 +310,124 @@ class ERPClient:
         except requests.exceptions.RequestException as e:
             logger.error(f"Error fetching default tax rate: {e}")
             return None
+
+    def post_invoice(
+        self,
+        invoice_id: str,
+        corporate_id: str,
+        user_id: str,
+        payment_account_id: Optional[str] = None
+    ) -> bool:
+        """
+        Post invoice to create journal entry
+        
+        Args:
+            invoice_id: Invoice UUID
+            corporate_id: Corporate UUID
+            user_id: User ID posting the invoice
+            payment_account_id: Account where payment was received (optional)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            url = f"{self.base_url}/api/accounting/invoices/{invoice_id}/post/"
+            payload = {}
+            
+            if payment_account_id:
+                payload['payment_account_id'] = payment_account_id
+            
+            response = self.session.post(
+                url,
+                headers=self._get_headers(corporate_id),
+                json=payload,
+                timeout=self.timeout,
+            )
+            
+            if response.status_code == 200:
+                logger.info(f"Posted invoice {invoice_id}")
+                return True
+            else:
+                logger.error(f"Failed to post invoice: {response.status_code} - {response.text}")
+                return False
+                
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error posting invoice: {e}")
+            return False
+    
+    def update_customer_ltv(
+        self,
+        corporate_id: str,
+        customer_id: str,
+        amount: Decimal
+    ) -> bool:
+        """
+        Update customer lifetime value in CRM
+        
+        Args:
+            corporate_id: Corporate UUID
+            customer_id: Contact UUID
+            amount: Amount to add to LTV
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            url = f"{self.base_url}/api/crm/contacts/{customer_id}/update-ltv/"
+            payload = {'amount': str(amount)}
+            
+            response = self.session.post(
+                url,
+                headers=self._get_headers(corporate_id),
+                json=payload,
+                timeout=self.timeout,
+            )
+            
+            return response.status_code == 200
+                
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error updating customer LTV: {e}")
+            return False
+    
+    def create_crm_activity(
+        self,
+        corporate_id: str,
+        customer_id: str,
+        activity_data: Dict
+    ) -> bool:
+        """
+        Create activity record in CRM for purchase
+        
+        Args:
+            corporate_id: Corporate UUID
+            customer_id: Contact UUID
+            activity_data: Activity data (order_number, total_amount)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            from datetime import datetime
+            
+            url = f"{self.base_url}/api/crm/activities/"
+            payload = {
+                'activity_type': 'note',
+                'status': 'done',
+                'subject': f"Purchase - Order {activity_data.get('order_number', '')}",
+                'description': f"Customer made a purchase of {activity_data.get('total_amount', '0')}",
+                'contact': customer_id,
+                'done_at': datetime.now().isoformat(),
+            }
+            
+            response = self.session.post(
+                url,
+                headers=self._get_headers(corporate_id),
+                json=payload,
+                timeout=self.timeout,
+            )
+            
+            return response.status_code == 201
+                
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error creating CRM activity: {e}")
+            return False

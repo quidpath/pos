@@ -10,8 +10,9 @@ class POSOrder(models.Model):
     """POS order/sale transaction"""
     STATE_CHOICES = [
         ('draft', 'Draft'),
-        ('pending', 'Pending'),
+        ('pending', 'Pending Payment'),
         ('paid', 'Paid'),
+        ('invoiced', 'Invoiced'),
         ('cancelled', 'Cancelled'),
     ]
 
@@ -23,6 +24,10 @@ class POSOrder(models.Model):
     customer_name = models.CharField(max_length=255, blank=True)
     loyalty_card = models.ForeignKey(LoyaltyCard, on_delete=models.SET_NULL, null=True, blank=True)
     state = models.CharField(max_length=20, choices=STATE_CHOICES, default='draft')
+    
+    # Payment account for accounting integration
+    payment_account_id = models.UUIDField(null=True, blank=True, db_index=True, 
+                                         help_text="Accounting account where payment was received")
     
     # Amounts
     subtotal = models.DecimalField(max_digits=15, decimal_places=2, default=0)
@@ -42,6 +47,12 @@ class POSOrder(models.Model):
     invoiced_at = models.DateTimeField(null=True, blank=True)
     invoiced_by = models.UUIDField(null=True, blank=True)
     
+    # Accounting sync status
+    accounting_synced = models.BooleanField(default=False, 
+                                           help_text="Whether order has been synced to accounting")
+    accounting_sync_error = models.TextField(blank=True, 
+                                            help_text="Error message if accounting sync failed")
+    
     notes = models.TextField(blank=True)
     cashier_id = models.UUIDField(db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -54,6 +65,7 @@ class POSOrder(models.Model):
         indexes = [
             models.Index(fields=['corporate_id', 'created_at']),
             models.Index(fields=['session', 'state']),
+            models.Index(fields=['accounting_synced', 'state']),
         ]
 
     def __str__(self):

@@ -15,6 +15,8 @@ from .views.pos_views import (
     session_list,
     store_detail,
     store_list_create,
+    mark_order_as_paid,
+    list_pending_orders,
 )
 from .views.summary import pos_summary
 from .views.invoice_conversion import (
@@ -44,6 +46,9 @@ urlpatterns = [
     path("orders/<uuid:order_pk>/lines/<uuid:line_pk>/", remove_order_line),
     path("orders/<uuid:order_pk>/pay/", process_payment),
     path("orders/<uuid:order_pk>/return/", process_return),
+    # Mark order as paid (for pending orders)
+    path("orders/<uuid:order_pk>/mark-as-paid/", mark_order_as_paid, name="mark_order_as_paid"),
+    path("orders/pending/", list_pending_orders, name="list_pending_orders"),
     # Invoice conversion endpoints
     path("orders/<uuid:order_pk>/convert-to-invoice/", convert_to_invoice, name="convert_to_invoice"),
     path("orders/<uuid:order_pk>/invoice-status/", get_invoice_status, name="get_invoice_status"),

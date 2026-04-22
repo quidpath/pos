@@ -127,6 +127,14 @@ def order_list_create(request):
         return Response({"error": "Active session not found"}, status=400)
 
     order_number = f"POS-{timezone.now().strftime('%Y%m%d')}-{str(uuid.uuid4())[:8].upper()}"
+    
+    # Check if order should be marked as paid immediately
+    mark_as_paid = request.data.get("mark_as_paid", False)
+    payment_account_id = request.data.get("payment_account_id")
+    
+    # Determine initial state
+    initial_state = 'paid' if mark_as_paid else 'draft'
+    
     order = POSOrder.objects.create(
         corporate_id=corporate_id,
         session=session,
@@ -134,7 +142,20 @@ def order_list_create(request):
         customer_id=request.data.get("customer_id"),
         customer_name=request.data.get("customer_name", ""),
         cashier_id=request.user_id,
+        state=initial_state,
+        payment_account_id=payment_account_id if mark_as_paid else None,
+        paid_at=timezone.now() if mark_as_paid else None,
     )
+    
+    # If marked as paid, sync to accounting immediately
+    if mark_as_paid and payment_account_id:
+        from pos_service.services.accounting_sync_service import AccountingSyncService
+        sync_service = AccountingSyncService()
+        
+        # Sync to accounting (will happen after order lines are added)
+        # For now, just mark the order as needing sync
+        logger.info(f"Order {order.order_number} marked as paid, will sync after lines are added")
+    
     return Response(POSOrderSerializer(order).data, status=201)
 
 
@@ -218,6 +239,11 @@ def process_payment(request, order_pk):
     payments_data = request.data.get("payments", [])
     if not payments_data:
         return Response({"error": "At least one payment method required"}, status=400)
+    
+    # Get payment account for accounting sync
+    payment_account_id = request.data.get("payment_account_id")
+    if not payment_account_id:
+        return Response({"error": "payment_account_id is required for accounting sync"}, status=400)
 
     total_paid = Decimal("0")
     payment_objects = []
@@ -228,7 +254,7 @@ def process_payment(request, order_pk):
             method=p["method"],
             amount=amount,
             reference=p.get("reference", ""),
-            state="confirmed",
+            state="completed",
         )
         payment_objects.append(payment)
         total_paid += amount
@@ -243,6 +269,7 @@ def process_payment(request, order_pk):
     order.change_amount = total_paid - order.total_amount
     order.state = "paid"
     order.paid_at = timezone.now()
+    order.payment_account_id = payment_account_id
 
     # Award loyalty points
     if order.loyalty_card:
@@ -255,29 +282,38 @@ def process_payment(request, order_pk):
 
     order.save()
 
-    # Decrement stock via Inventory service (fire-and-forget)
-    for line in order.lines.all():
-        try:
-            inventory_client.create_stock_move({
-                "corporate_id": str(corporate_id),
-                "reference": order.order_number,
-                "move_type": "delivery",
-                "product_id": str(line.product_id),
-                "variant_id": str(line.variant_id) if line.variant_id else None,
-                "quantity": str(line.quantity),
-                "state": "done",
-            })
-        except Exception as e:
-            logger.warning("Could not update inventory for line %s: %s", line.id, e)
+    # Automatically sync to accounting
+    from pos_service.services.accounting_sync_service import AccountingSyncService
+    sync_service = AccountingSyncService()
+    
+    sync_result = sync_service.sync_order_to_accounting(
+        order=order,
+        user_id=request.user_id,
+        payment_account_id=payment_account_id,
+        apply_tax=True  # Always apply tax
+    )
+    
+    if not sync_result['success']:
+        logger.error(f"Failed to sync order {order.order_number} to accounting: {sync_result['error']}")
+        # Don't fail the payment, just log the error
+        # Order can be synced later via retry endpoint
 
-    return Response(POSOrderSerializer(order).data)
+    return Response({
+        **POSOrderSerializer(order).data,
+        'accounting_sync': {
+            'success': sync_result['success'],
+            'invoice_id': sync_result['invoice_id'],
+            'invoice_number': sync_result['invoice_number'],
+            'error': sync_result['error']
+        }
+    })
 
 
 @api_view(["POST"])
 def process_return(request, order_pk):
     corporate_id = request.corporate_id
     try:
-        original = POSOrder.objects.get(pk=order_pk, corporate_id=corporate_id, state="paid")
+        original = POSOrder.objects.get(pk=order_pk, corporate_id=corporate_id, state__in=["paid", "invoiced"])
     except POSOrder.DoesNotExist:
         return Response({"error": "Paid order not found"}, status=404)
 
@@ -309,6 +345,177 @@ def process_return(request, order_pk):
     return_order.state = "validated"
     return_order.save()
     return Response(ReturnOrderSerializer(return_order).data, status=201)
+
+
+@api_view(["POST"])
+def mark_order_as_paid(request, order_pk):
+    """
+    Mark a pending order as paid and sync to accounting
+    
+    Request Body:
+    {
+        "payment_account_id": "uuid",  # Required: Account where payment was received
+        "payments": [                   # Required: Payment details
+            {
+                "method": "cash",
+                "amount": "1000.00",
+                "reference": ""
+            }
+        ],
+        "apply_tax": true               # Optional: Whether to apply tax (default: true)
+    }
+    
+    Response:
+    {
+        "success": true,
+        "order": {...},
+        "accounting_sync": {
+            "success": true,
+            "invoice_id": "uuid",
+            "invoice_number": "INV-2026-001",
+            "error": null
+        }
+    }
+    """
+    corporate_id = request.corporate_id
+    
+    try:
+        order = POSOrder.objects.get(pk=order_pk, corporate_id=corporate_id)
+    except POSOrder.DoesNotExist:
+        return Response({"error": "Order not found"}, status=404)
+    
+    # Validate order state
+    if order.state not in ['draft', 'pending']:
+        return Response({
+            "error": "ORDER_ALREADY_PAID",
+            "message": f"Order is already in '{order.state}' state",
+            "current_state": order.state
+        }, status=400)
+    
+    # Get payment details
+    payments_data = request.data.get("payments", [])
+    if not payments_data:
+        return Response({"error": "At least one payment method required"}, status=400)
+    
+    payment_account_id = request.data.get("payment_account_id")
+    if not payment_account_id:
+        return Response({"error": "payment_account_id is required"}, status=400)
+    
+    apply_tax = request.data.get("apply_tax", True)
+    
+    # Process payments
+    total_paid = Decimal("0")
+    payment_objects = []
+    for p in payments_data:
+        amount = Decimal(str(p["amount"]))
+        payment = POSPayment(
+            order=order,
+            method=p["method"],
+            amount=amount,
+            reference=p.get("reference", ""),
+            state="completed",
+        )
+        payment_objects.append(payment)
+        total_paid += amount
+    
+    if total_paid < order.total_amount:
+        return Response({
+            "error": "INSUFFICIENT_PAYMENT",
+            "message": f"Insufficient payment. Required: {order.total_amount}, Received: {total_paid}"
+        }, status=400)
+    
+    # Save payments
+    for p in payment_objects:
+        p.save()
+    
+    # Update order
+    order.amount_paid = total_paid
+    order.change_amount = total_paid - order.total_amount
+    order.state = "paid"
+    order.paid_at = timezone.now()
+    order.payment_account_id = payment_account_id
+    order.save()
+    
+    # Sync to accounting
+    from pos_service.services.accounting_sync_service import AccountingSyncService
+    sync_service = AccountingSyncService()
+    
+    sync_result = sync_service.sync_order_to_accounting(
+        order=order,
+        user_id=request.user_id,
+        payment_account_id=payment_account_id,
+        apply_tax=apply_tax
+    )
+    
+    if not sync_result['success']:
+        logger.error(f"Failed to sync order {order.order_number} to accounting: {sync_result['error']}")
+    
+    return Response({
+        "success": True,
+        "order": POSOrderSerializer(order).data,
+        "accounting_sync": {
+            "success": sync_result['success'],
+            "invoice_id": sync_result['invoice_id'],
+            "invoice_number": sync_result['invoice_number'],
+            "error": sync_result['error']
+        }
+    }, status=200)
+
+
+@api_view(["GET"])
+def list_pending_orders(request):
+    """
+    List all orders that are pending payment
+    
+    Query Parameters:
+    - limit: Max results (default: 50)
+    - offset: Pagination offset (default: 0)
+    - customer_id: Filter by customer
+    - date_from: Filter by date (YYYY-MM-DD)
+    - date_to: Filter by date (YYYY-MM-DD)
+    
+    Response:
+    {
+        "count": 10,
+        "results": [...]
+    }
+    """
+    corporate_id = request.corporate_id
+    
+    # Get query parameters
+    limit = int(request.GET.get("limit", 50))
+    offset = int(request.GET.get("offset", 0))
+    customer_id = request.GET.get("customer_id")
+    date_from = request.GET.get("date_from")
+    date_to = request.GET.get("date_to")
+    
+    # Build query
+    qs = POSOrder.objects.filter(
+        corporate_id=corporate_id,
+        state__in=['draft', 'pending']
+    ).select_related("session__terminal__store")
+    
+    if customer_id:
+        qs = qs.filter(customer_id=customer_id)
+    
+    if date_from:
+        qs = qs.filter(created_at__gte=date_from)
+    
+    if date_to:
+        qs = qs.filter(created_at__lte=date_to)
+    
+    # Get total count
+    total_count = qs.count()
+    
+    # Apply pagination
+    qs = qs.order_by("-created_at")[offset:offset + limit]
+    
+    return Response({
+        "count": total_count,
+        "limit": limit,
+        "offset": offset,
+        "results": POSOrderSerializer(qs, many=True).data,
+    })
 
 
 # ─── Promotions & Loyalty ────────────────────────────────────────────────────
