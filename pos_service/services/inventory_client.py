@@ -19,7 +19,8 @@ class InventoryClient:
     
     def __init__(self):
         self.base_url = getattr(settings, 'INVENTORY_SERVICE_URL', 'http://inventory-backend:8000')
-        self.secret = getattr(settings, 'INVENTORY_SERVICE_SECRET', '')
+        # Use ERP_SERVICE_SECRET for inter-service communication
+        self.secret = getattr(settings, 'ERP_SERVICE_SECRET', '') or getattr(settings, 'INVENTORY_SERVICE_SECRET', '')
         self.cache_ttl = 300  # 5 minutes
     
     def _get_headers(self, corporate_id: str) -> Dict:
