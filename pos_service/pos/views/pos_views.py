@@ -121,10 +121,14 @@ def order_list_create(request):
         return Response({"results": POSOrderSerializer(page_qs, many=True).data, **meta})
 
     session_id = request.data.get("session")
-    try:
-        session = POSSession.objects.get(pk=session_id, terminal__store__corporate_id=corporate_id, state="open")
-    except POSSession.DoesNotExist:
-        return Response({"error": "Active session not found"}, status=400)
+    session = None
+    
+    # Session is optional - if provided, validate it
+    if session_id:
+        try:
+            session = POSSession.objects.get(pk=session_id, terminal__store__corporate_id=corporate_id, state="open")
+        except POSSession.DoesNotExist:
+            return Response({"error": "Active session not found"}, status=400)
 
     order_number = f"POS-{timezone.now().strftime('%Y%m%d')}-{str(uuid.uuid4())[:8].upper()}"
     
@@ -137,7 +141,7 @@ def order_list_create(request):
     
     order = POSOrder.objects.create(
         corporate_id=corporate_id,
-        session=session,
+        session=session,  # Can be None for online orders
         order_number=order_number,
         customer_id=request.data.get("customer_id"),
         customer_name=request.data.get("customer_name", ""),

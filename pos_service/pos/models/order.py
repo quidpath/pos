@@ -18,7 +18,8 @@ class POSOrder(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     corporate_id = models.UUIDField(db_index=True)
-    session = models.ForeignKey(POSSession, on_delete=models.CASCADE, related_name='orders')
+    session = models.ForeignKey(POSSession, on_delete=models.CASCADE, related_name='orders', 
+                                null=True, blank=True, help_text="Optional: POS session (for in-store sales)")
     order_number = models.CharField(max_length=50, unique=True, db_index=True)
     customer_id = models.UUIDField(null=True, blank=True, db_index=True)
     customer_name = models.CharField(max_length=255, blank=True)
