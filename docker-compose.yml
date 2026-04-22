@@ -6,7 +6,7 @@ services:
     container_name: postgres_pos_prod
     restart: unless-stopped
     volumes:
-      - /mnt/ebs/pos/postgres_data:/var/lib/postgresql/data
+      - /mnt/ebs/pos/postgres_data_v2:/var/lib/postgresql/data
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -37,12 +37,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/health/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
     env_file:
       - .env
     environment:
