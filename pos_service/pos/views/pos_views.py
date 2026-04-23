@@ -181,7 +181,16 @@ def create_complete_order(request, corporate_id):
                 # Get product from inventory
                 product = inventory_client.get_product(product_id, corporate_id)
                 if not product:
-                    return Response({"error": f"Product {product_id} not found in inventory"}, status=404)
+                    logger.error(
+                        f"Product {product_id} not found in inventory. "
+                        f"Corporate: {corporate_id}, "
+                        f"Inventory URL: {inventory_client.base_url}"
+                    )
+                    return Response({
+                        "error": f"Product {product_id} not found in inventory",
+                        "details": "The product may not exist or the inventory service may be unavailable",
+                        "inventory_url": inventory_client.base_url
+                    }, status=404)
                 
                 # Check stock availability
                 stock = inventory_client.get_stock_level(product_id, corporate_id)

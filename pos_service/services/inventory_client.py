@@ -57,18 +57,25 @@ class InventoryClient:
         
         # Fetch from inventory
         try:
+            url = f"{self.base_url}/api/inventory/products/{product_id}/"
+            logger.info(f"Fetching product {product_id} from {url} for corporate {corporate_id}")
+            
             response = requests.get(
-                f"{self.base_url}/api/inventory/products/{product_id}/",
+                url,
                 headers=self._get_headers(corporate_id),
                 timeout=5
             )
             
+            logger.info(f"Inventory response status: {response.status_code}")
+            
             if response.status_code == 404:
-                logger.warning(f"Product {product_id} not found in inventory")
+                logger.warning(f"Product {product_id} not found in inventory (404)")
                 return None
             
             response.raise_for_status()
             product = response.json()
+            
+            logger.info(f"Successfully fetched product {product_id}: {product.get('name', 'Unknown')}")
             
             # Cache it
             if use_cache:
@@ -78,13 +85,13 @@ class InventoryClient:
             return product
             
         except requests.exceptions.Timeout:
-            logger.error(f"Timeout fetching product {product_id} from inventory")
+            logger.error(f"Timeout fetching product {product_id} from inventory at {self.base_url}")
             return None
-        except requests.exceptions.ConnectionError:
-            logger.error(f"Connection error fetching product {product_id} from inventory")
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"Connection error fetching product {product_id} from inventory at {self.base_url}: {str(e)}")
             return None
         except Exception as e:
-            logger.error(f"Error fetching product {product_id}: {str(e)}")
+            logger.error(f"Error fetching product {product_id} from {self.base_url}: {str(e)}")
             return None
     
     def get_products_bulk(self, product_ids: List[str], corporate_id: str) -> List[Dict]:
