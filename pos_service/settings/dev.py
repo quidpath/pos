@@ -1,6 +1,6 @@
 from .base import *
 
-DEBUG = TRUE
+DEBUG = True
 ALLOWED_HOSTS = ["*"]
 
 # Service URLs for development environment

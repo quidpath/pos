@@ -2,6 +2,7 @@ import logging
 import uuid
 from decimal import Decimal
 
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status
@@ -120,6 +121,12 @@ def order_list_create(request):
         page_qs, meta = paginate_qs(qs, request)
         return Response({"results": POSOrderSerializer(page_qs, many=True).data, **meta})
 
+    # Enhanced order creation with items and payments
+    return create_complete_order(request, corporate_id)
+
+
+def create_complete_order(request, corporate_id):
+    """Create order with items and optional payment processing"""
     session_id = request.data.get("session")
     session = None
     
@@ -135,32 +142,134 @@ def order_list_create(request):
     # Check if order should be marked as paid immediately
     mark_as_paid = request.data.get("mark_as_paid", False)
     payment_account_id = request.data.get("payment_account_id")
+    items_data = request.data.get("items", [])
+    payments_data = request.data.get("payments", [])
+    
+    # Validate required fields
+    if not items_data:
+        return Response({"error": "At least one item is required"}, status=400)
+    
+    if mark_as_paid and not payment_account_id:
+        return Response({"error": "payment_account_id is required when mark_as_paid is True"}, status=400)
     
     # Determine initial state
     initial_state = 'paid' if mark_as_paid else 'draft'
     
-    order = POSOrder.objects.create(
-        corporate_id=corporate_id,
-        session=session,  # Can be None for online orders
-        order_number=order_number,
-        customer_id=request.data.get("customer_id"),
-        customer_name=request.data.get("customer_name", ""),
-        cashier_id=request.user_id,
-        state=initial_state,
-        payment_account_id=payment_account_id if mark_as_paid else None,
-        paid_at=timezone.now() if mark_as_paid else None,
-    )
-    
-    # If marked as paid, sync to accounting immediately
-    if mark_as_paid and payment_account_id:
-        from pos_service.services.accounting_sync_service import AccountingSyncService
-        sync_service = AccountingSyncService()
-        
-        # Sync to accounting (will happen after order lines are added)
-        # For now, just mark the order as needing sync
-        logger.info(f"Order {order.order_number} marked as paid, will sync after lines are added")
-    
-    return Response(POSOrderSerializer(order).data, status=201)
+    try:
+        with transaction.atomic():
+            # Create order
+            order = POSOrder.objects.create(
+                corporate_id=corporate_id,
+                session=session,  # Can be None for online orders
+                order_number=order_number,
+                customer_id=request.data.get("customer_id"),
+                customer_name=request.data.get("customer_name", ""),
+                cashier_id=request.user_id,
+                state=initial_state,
+                payment_account_id=payment_account_id if mark_as_paid else None,
+                paid_at=timezone.now() if mark_as_paid else None,
+                notes=request.data.get("notes", ""),
+            )
+            
+            # Add order lines
+            for item_data in items_data:
+                product_id = item_data.get("product_id")
+                quantity = Decimal(str(item_data.get("quantity", "1")))
+                unit_price = Decimal(str(item_data.get("unit_price", "0")))
+                discount_percent = Decimal(str(item_data.get("discount_percent", "0")))
+                
+                # Get product from inventory
+                product = inventory_client.get_product(product_id, corporate_id)
+                if not product:
+                    return Response({"error": f"Product {product_id} not found in inventory"}, status=404)
+                
+                # Check stock availability
+                stock = inventory_client.get_stock_level(product_id, corporate_id)
+                if stock:
+                    available = Decimal(stock.get('total_available', '0'))
+                    if available < quantity:
+                        return Response({
+                            "error": f"Insufficient stock for {product['name']}",
+                            "available": str(available),
+                            "requested": str(quantity)
+                        }, status=400)
+                
+                # Create order line
+                line = POSOrderLine(
+                    order=order,
+                    product_id=product_id,
+                    variant_id=item_data.get("variant_id"),
+                    product_name=product['name'],
+                    sku=product.get('internal_reference', ''),
+                    quantity=quantity,
+                    unit_price=unit_price or Decimal(product.get('list_price', '0')),
+                    discount_percent=discount_percent,
+                    notes=item_data.get("notes", ""),
+                )
+                line.save()
+            
+            # Calculate totals
+            order.calculate_totals()
+            
+            # Process payments if marked as paid
+            if mark_as_paid and payments_data:
+                total_paid = Decimal("0")
+                payment_objects = []
+                
+                for payment_data in payments_data:
+                    amount = Decimal(str(payment_data["amount"]))
+                    payment = POSPayment(
+                        order=order,
+                        method=payment_data["method"],
+                        amount=amount,
+                        reference=payment_data.get("reference", ""),
+                        state="completed",
+                    )
+                    payment_objects.append(payment)
+                    total_paid += amount
+
+                if total_paid < order.total_amount:
+                    return Response({
+                        "error": f"Insufficient payment. Required: {order.total_amount}, Received: {total_paid}"
+                    }, status=400)
+
+                # Save payments
+                for payment in payment_objects:
+                    payment.save()
+
+                order.amount_paid = total_paid
+                order.change_amount = total_paid - order.total_amount
+                order.save()
+
+                # Sync to accounting
+                from pos_service.services.accounting_sync_service import AccountingSyncService
+                sync_service = AccountingSyncService()
+                
+                sync_result = sync_service.sync_order_to_accounting(
+                    order=order,
+                    user_id=request.user_id,
+                    payment_account_id=payment_account_id,
+                    apply_tax=True
+                )
+                
+                if not sync_result['success']:
+                    logger.error(f"Failed to sync order {order.order_number} to accounting: {sync_result['error']}")
+                
+                return Response({
+                    **POSOrderSerializer(order).data,
+                    'accounting_sync': {
+                        'success': sync_result['success'],
+                        'invoice_id': sync_result['invoice_id'],
+                        'invoice_number': sync_result['invoice_number'],
+                        'error': sync_result['error']
+                    }
+                })
+            
+            return Response(POSOrderSerializer(order).data, status=201)
+            
+    except Exception as e:
+        logger.error(f"Error creating order: {str(e)}")
+        return Response({"error": str(e)}, status=500)
 
 
 @api_view(["GET"])
