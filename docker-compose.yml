@@ -50,7 +50,7 @@ services:
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       SECRET_KEY: ${SECRET_KEY}
       POS_SERVICE_SECRET: ${POS_SERVICE_SECRET}
-      INVENTORY_SERVICE_URL: http://inventory-backend:8000
+      INVENTORY_SERVICE_URL: http://inventory-backend-prod:8000
       INVENTORY_SERVICE_SECRET: ${INVENTORY_SERVICE_SECRET}
       REDIS_URL: redis://redis:6379/0
       DJANGO_SETTINGS_MODULE: pos_service.settings.prod

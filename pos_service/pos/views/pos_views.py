@@ -157,6 +157,31 @@ def create_complete_order(request, corporate_id):
     
     try:
         with transaction.atomic():
+            # Auto-sync products to inventory before creating order
+            product_ids = [item.get("product_id") for item in items_data]
+            
+            # Try to sync products that don't exist in inventory
+            for product_id in product_ids:
+                product = inventory_client.get_product(product_id, corporate_id, use_cache=False)
+                
+                if not product:
+                    # Try to get from ERP and sync
+                    logger.info(f"Product {product_id} not in inventory, attempting auto-sync")
+                    try:
+                        from pos_service.services.erp_client import ERPClient
+                        erp_client = ERPClient()
+                        erp_product = erp_client.get_product(corporate_id, product_id)
+                        
+                        if erp_product:
+                            sync_result = erp_client.sync_product_to_inventory(corporate_id, product_id, erp_product)
+                            if sync_result.get('success'):
+                                logger.info(f"Successfully auto-synced product {product_id}")
+                                inventory_client.invalidate_cache(product_id, corporate_id)
+                            else:
+                                logger.warning(f"Failed to auto-sync product {product_id}: {sync_result.get('error')}")
+                    except Exception as sync_error:
+                        logger.warning(f"Auto-sync failed for product {product_id}: {str(sync_error)}")
+            
             # Create order
             order = POSOrder.objects.create(
                 corporate_id=corporate_id,
@@ -203,7 +228,11 @@ def create_complete_order(request, corporate_id):
                             "requested": str(quantity)
                         }, status=400)
                 
-                # Create order line
+                # Create order line - use product price if unit_price is 0
+                final_unit_price = unit_price if unit_price > 0 else Decimal(product.get('list_price', '0'))
+                discount_amount = (final_unit_price * quantity * discount_percent) / Decimal("100")
+                line_subtotal = (final_unit_price * quantity) - discount_amount
+                
                 line = POSOrderLine(
                     order=order,
                     product_id=product_id,
@@ -211,8 +240,10 @@ def create_complete_order(request, corporate_id):
                     product_name=product['name'],
                     sku=product.get('internal_reference', ''),
                     quantity=quantity,
-                    unit_price=unit_price or Decimal(product.get('list_price', '0')),
+                    unit_price=final_unit_price,
                     discount_percent=discount_percent,
+                    discount_amount=discount_amount,
+                    subtotal=line_subtotal,
                     notes=item_data.get("notes", ""),
                 )
                 line.save()
