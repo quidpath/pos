@@ -217,13 +217,16 @@ def create_complete_order(request, corporate_id):
                         "inventory_url": inventory_client.base_url
                     }, status=404)
                 
+                # Extract product name - handle different possible field names
+                product_name = product.get('name') or product.get('display_name') or product.get('product_name') or 'Unknown Product'
+                
                 # Check stock availability
                 stock = inventory_client.get_stock_level(product_id, corporate_id)
                 if stock:
                     available = Decimal(stock.get('total_available', '0'))
                     if available < quantity:
                         return Response({
-                            "error": f"Insufficient stock for {product['name']}",
+                            "error": f"Insufficient stock for {product_name}",
                             "available": str(available),
                             "requested": str(quantity)
                         }, status=400)
@@ -237,8 +240,8 @@ def create_complete_order(request, corporate_id):
                     order=order,
                     product_id=product_id,
                     variant_id=item_data.get("variant_id"),
-                    product_name=product['name'],
-                    sku=product.get('internal_reference', ''),
+                    product_name=product_name,
+                    sku=product.get('internal_reference', '') or product.get('sku', ''),
                     quantity=quantity,
                     unit_price=final_unit_price,
                     discount_percent=discount_percent,
@@ -339,6 +342,9 @@ def add_order_line(request, order_pk):
     if not product:
         return Response({"error": "Product not found in inventory"}, status=404)
     
+    # Extract product name - handle different possible field names
+    product_name = product.get('name') or product.get('display_name') or product.get('product_name') or 'Unknown Product'
+    
     # Check stock availability
     stock = inventory_client.get_stock_level(product_id, corporate_id)
     if stock:
@@ -355,8 +361,8 @@ def add_order_line(request, order_pk):
         order=order,
         product_id=product_id,
         variant_id=request.data.get("variant_id"),
-        product_name=product['name'],  # Captured from inventory
-        sku=product.get('internal_reference', ''),  # Captured from inventory
+        product_name=product_name,  # Captured from inventory
+        sku=product.get('internal_reference', '') or product.get('sku', ''),  # Captured from inventory
         quantity=quantity,
         unit_price=Decimal(product.get('list_price', request.data.get('unit_price', '0'))),  # Use inventory price
         discount_percent=Decimal(str(request.data.get("discount_percent", "0"))),
