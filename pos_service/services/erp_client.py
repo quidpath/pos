@@ -431,3 +431,107 @@ class ERPClient:
         except requests.exceptions.RequestException as e:
             logger.error(f"Error creating CRM activity: {e}")
             return False
+    
+    def get_product(self, corporate_id: str, product_id: str) -> Optional[Dict]:
+        """
+        Get product from accounting/ERP
+        
+        Args:
+            corporate_id: Corporate UUID
+            product_id: Product UUID
+            
+        Returns:
+            Product data dict or None
+        """
+        try:
+            # Try inventory first (integrated endpoint)
+            url = f"{self.base_url}/api/inventory/products/integrated/{product_id}/"
+            response = self.session.get(
+                url,
+                headers=self._get_headers(corporate_id),
+                timeout=self.timeout,
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                return data.get('product', data)
+            
+            logger.warning(f"Product {product_id} not found in ERP")
+            return None
+                
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error fetching product: {e}")
+            return None
+    
+    def sync_product_to_inventory(
+        self,
+        corporate_id: str,
+        product_id: str,
+        product_data: Dict
+    ) -> Dict:
+        """
+        Sync product to inventory service
+        
+        Args:
+            corporate_id: Corporate UUID
+            product_id: Product UUID
+            product_data: Product data from ERP
+            
+        Returns:
+            Result dict with success status
+        """
+        try:
+            # Use inventory's integrated create endpoint
+            url = f"{self.base_url}/api/inventory/products/integrated/"
+            
+            # Prepare payload for inventory
+            payload = {
+                'id': product_id,
+                'name': product_data.get('name', ''),
+                'internal_reference': product_data.get('internal_reference', product_data.get('sku', '')),
+                'barcode': product_data.get('barcode', ''),
+                'description': product_data.get('description', ''),
+                'list_price': str(product_data.get('list_price', '0')),
+                'standard_price': str(product_data.get('standard_price', product_data.get('cost_price', '0'))),
+                'min_qty': str(product_data.get('min_qty', '0')),
+                'reorder_qty': str(product_data.get('reorder_qty', '0')),
+                'uom_id': product_data.get('uom_id', product_data.get('unit_of_measure', '')),
+                'is_active': product_data.get('is_active', True),
+                'product_type': product_data.get('product_type', 'storable'),
+                'can_be_sold': product_data.get('can_be_sold', True),
+                'can_be_purchased': product_data.get('can_be_purchased', True),
+                'tax_rate': str(product_data.get('tax_rate', '16.00')),
+            }
+            
+            # Add optional fields
+            if product_data.get('category_id'):
+                payload['category_id'] = product_data['category_id']
+            
+            response = self.session.post(
+                url,
+                headers=self._get_headers(corporate_id),
+                json=payload,
+                timeout=self.timeout,
+            )
+            
+            if response.status_code in [200, 201]:
+                logger.info(f"Successfully synced product {product_id} to inventory")
+                return {
+                    'success': True,
+                    'product': response.json().get('product', product_data)
+                }
+            else:
+                error_msg = f"Failed to sync product: {response.status_code} - {response.text}"
+                logger.error(error_msg)
+                return {
+                    'success': False,
+                    'error': error_msg
+                }
+                
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Error syncing product: {str(e)}"
+            logger.error(error_msg)
+            return {
+                'success': False,
+                'error': error_msg
+            }

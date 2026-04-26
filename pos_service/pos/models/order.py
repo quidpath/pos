@@ -72,6 +72,26 @@ class POSOrder(models.Model):
     def __str__(self):
         return f"Order {self.order_number}"
 
+    def calculate_totals(self):
+        """Calculate and update order totals based on order lines"""
+        lines = self.lines.all()
+        
+        # Calculate subtotal from all lines
+        subtotal = sum(line.subtotal for line in lines)
+        
+        # For now, we'll use simple calculations
+        # This can be enhanced later with proper tax calculations
+        self.subtotal = subtotal
+        self.total_amount = subtotal - self.discount_amount + self.tax_amount
+        
+        # Update line subtotals
+        for line in lines:
+            line.discount_amount = (line.unit_price * line.quantity * line.discount_percent) / 100
+            line.subtotal = (line.unit_price * line.quantity) - line.discount_amount
+            line.save()
+        
+        self.save()
+
 
 class POSOrderLine(models.Model):
     """POS order line item - references product in Inventory service"""

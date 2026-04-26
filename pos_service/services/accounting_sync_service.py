@@ -129,7 +129,23 @@ class AccountingSyncService:
             if journal_created:
                 result['journal_entry_id'] = invoice_data.get('journal_entry_id')
             
-            # 6. Update order
+            # 6. Create bank transaction if payment account provided
+            if payment_account_id:
+                bank_txn_result = self._create_bank_transaction(
+                    corporate_id=corporate_id,
+                    payment_account_id=payment_account_id,
+                    amount=order.total_amount,
+                    reference=order.order_number,
+                    narration=f"POS Order {order.order_number} - {order.customer_name or 'Walk-in Customer'}",
+                    user_id=user_id
+                )
+                
+                if not bank_txn_result['success']:
+                    logger.warning(f"Failed to create bank transaction: {bank_txn_result['error']}")
+                else:
+                    logger.info(f"Created bank transaction {bank_txn_result['transaction_id']}")
+            
+            # 7. Update order
             order.invoice_id = invoice_data['id']
             order.is_invoiced = True
             order.invoiced_at = timezone.now()
@@ -156,10 +172,10 @@ class AccountingSyncService:
                 f"Journal Entry: {result['journal_entry_id']}"
             )
             
-            # 7. Update inventory (create stock moves)
+            # 8. Update inventory (create stock moves)
             self._update_inventory(order, corporate_id, user_id)
             
-            # 8. Update CRM if customer exists
+            # 9. Update CRM if customer exists
             if order.customer_id:
                 self._update_crm(order, corporate_id)
             
@@ -252,6 +268,71 @@ class AccountingSyncService:
             )
         except Exception as e:
             logger.error(f"Error updating CRM: {str(e)}")
+    
+    def _create_bank_transaction(
+        self,
+        corporate_id: str,
+        payment_account_id: str,
+        amount: Decimal,
+        reference: str,
+        narration: str,
+        user_id: str
+    ) -> Dict:
+        """Create bank transaction for POS payment"""
+        try:
+            import requests
+            from django.conf import settings
+            
+            # Get ERP backend URL
+            erp_url = getattr(settings, 'ERP_BACKEND_URL', 'http://quidpath-backend:8004')
+            service_secret = getattr(settings, 'ERP_SERVICE_SECRET', '')
+            
+            # Create transaction via ERP backend
+            url = f"{erp_url}/api/banking/transactions/"
+            headers = {
+                'Content-Type': 'application/json',
+                'X-Service-Key': service_secret,
+                'X-Corporate-ID': corporate_id,
+                'X-User-ID': user_id,
+            }
+            
+            payload = {
+                'corporate': corporate_id,
+                'corporate_id': corporate_id,
+                'bank_account_id': payment_account_id,
+                'transaction_type': 'deposit',
+                'amount': str(amount),
+                'reference': reference,
+                'narration': narration,
+                'status': 'confirmed',
+            }
+            
+            response = requests.post(url, json=payload, headers=headers, timeout=10)
+            
+            if response.status_code in [200, 201]:
+                data = response.json()
+                return {
+                    'success': True,
+                    'transaction_id': data.get('id'),
+                    'error': None
+                }
+            else:
+                error_msg = f"Failed to create bank transaction: {response.status_code} - {response.text}"
+                logger.error(error_msg)
+                return {
+                    'success': False,
+                    'transaction_id': None,
+                    'error': error_msg
+                }
+                
+        except Exception as e:
+            error_msg = f"Error creating bank transaction: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {
+                'success': False,
+                'transaction_id': None,
+                'error': error_msg
+            }
     
     def retry_failed_syncs(self, corporate_id: str, user_id: str, limit: int = 50) -> Dict:
         """

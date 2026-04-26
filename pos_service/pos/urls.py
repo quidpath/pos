@@ -31,6 +31,10 @@ from .views.product_views import (
     get_products_bulk,
     check_stock,
 )
+from .views.product_sync import (
+    sync_product_to_inventory,
+    auto_sync_products,
+)
 # Product sync removed - using inventory query API directly
 
 urlpatterns = [
@@ -61,6 +65,8 @@ urlpatterns = [
     path("products/", list_products_for_sale, name="list_products_for_sale"),
     path("products/search/", search_products, name="search_products"),
     path("products/bulk/", get_products_bulk, name="get_products_bulk"),
+    path("products/auto-sync/", auto_sync_products, name="auto_sync_products"),
     path("products/<uuid:product_id>/", get_product, name="get_product"),
     path("products/<uuid:product_id>/stock/", check_stock, name="check_stock"),
+    path("products/<uuid:product_id>/sync/", sync_product_to_inventory, name="sync_product_to_inventory"),
 ]
