@@ -78,5 +78,7 @@ networks:
     name: pos_prod_network
     driver: bridge
   quidpath_network:
-    external: true
-    name: tmp_quidpath_network
+    name: prod_quidpath_network
+    driver: bridge
+    # Docker Compose will create this network if it doesn't exist
+    # or reuse it if another service already created it
