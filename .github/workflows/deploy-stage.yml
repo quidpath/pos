@@ -1,8 +1,9 @@
-name: Build Stage Image & Deploy (POS)
+name: Build Stage Image & Deploy (POS) - DISABLED
 
+# This workflow is disabled - only production deployments on master branch are active
 on:
   push:
-    branches: ["Development"]
+    branches: ["DISABLED"]  # Changed to disable stage deployments
 
 jobs:
   build-and-trigger:
