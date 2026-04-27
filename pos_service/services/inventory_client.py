@@ -73,9 +73,17 @@ class InventoryClient:
                 return None
             
             response.raise_for_status()
-            product = response.json()
+            response_data = response.json()
             
-            logger.info(f"Successfully fetched product {product_id}: {product.get('name', 'Unknown')}")
+            # Inventory service wraps response in {"success": true, "data": {...}}
+            # Extract the actual product data
+            if isinstance(response_data, dict) and 'data' in response_data:
+                product = response_data['data']
+            else:
+                product = response_data
+            
+            # Log the actual product data to debug name extraction
+            logger.info(f"Successfully fetched product {product_id}. Product data: {product}")
             
             # Cache it
             if use_cache:
